@@ -3,7 +3,6 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useAuthGuard } from "@/hooks/useAuthGuard";
-import { apiClient } from "@/lib/api"; // adjust path if named "@/lib/apiClient"
 import { CONFIG } from "@/lib/config";
 import { Button } from "@/components/ui/button";
 import {
@@ -17,11 +16,14 @@ import {
 interface Customer {
   id?: number;
   customer_id?: number;
-  name: string;
+  name?: string;
+  full_name?: string;
   email: string;
-  phone: string;
-  address: string;
+  phone?: string;
+  address?: string;
 }
+
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
 
 export default function CustomersPage() {
   const { isChecking } = useAuthGuard({ requireAuth: true });
@@ -48,21 +50,64 @@ export default function CustomersPage() {
     address: "",
   });
 
-  const getRecordId = (c: Customer): number => Number(c.id ?? c.customer_id);
+  // Build full endpoint URL cleanly
+  const endpointPath = CONFIG?.ENDPOINTS?.CUSTOMERS || "/customers";
+  const customersUrl = endpointPath.startsWith("http")
+    ? endpointPath
+    : `${API_BASE_URL}${endpointPath}`;
 
-  // 1. GET — Fetch all customers
+  const getAuthHeaders = (): HeadersInit => {
+    const token =
+      typeof window !== "undefined"
+        ? localStorage.getItem("token") || localStorage.getItem("accessToken")
+        : null;
+
+    return {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    };
+  };
+
+  const getRecordId = (c: Customer): number => Number(c.id ?? c.customer_id);
+  const getDisplayName = (c: Customer): string => c.name || c.full_name || "";
+
+  const parseErrorResponse = async (res: Response, fallback: string) => {
+    const text = await res.text();
+    try {
+      const json = JSON.parse(text);
+      return json.message || json.error || fallback;
+    } catch {
+      if (text.includes("Cannot GET") || text.includes("Cannot POST")) {
+        return `Route not found on backend (${res.status}): ${customersUrl}. Verify your backend route path in CONFIG.ENDPOINTS.CUSTOMERS.`;
+      }
+      return text || fallback;
+    }
+  };
+
+  // =========================================================
+  // 1. GET — Fetch all customers directly from frontend
+  // =========================================================
   const fetchCustomers = async () => {
     try {
       setLoading(true);
       setError(null);
-      const response = await apiClient<Customer[] | { data: Customer[] }>(
-        CONFIG.ENDPOINTS.CUSTOMERS,
-        {
-          method: "GET",
-          requiresAuth: true,
-        }
-      );
-      const list = Array.isArray(response) ? response : response.data ?? [];
+
+      const res = await fetch(customersUrl, {
+        method: "GET",
+        headers: getAuthHeaders(),
+      });
+
+      if (!res.ok) {
+        throw new Error(
+          await parseErrorResponse(res, `Failed to load customers (${res.status})`)
+        );
+      }
+
+      const data = await res.json();
+      const list = Array.isArray(data)
+        ? data
+        : data.data ?? data.customers ?? data.rows ?? [];
+
       setCustomers(list);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load customers.");
@@ -77,29 +122,39 @@ export default function CustomersPage() {
     }
   }, [isChecking]);
 
-  // 2. POST — Create a new customer
+  // =========================================================
+  // 2. POST — Create a new customer directly from frontend
+  // =========================================================
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
     setSuccessMessage(null);
 
     if (!name.trim() || !email.trim()) {
-      setError("Name and email are required.");
+      setError("Full name and email are required.");
       return;
     }
 
     try {
       setSubmitting(true);
-      await apiClient<Customer>(CONFIG.ENDPOINTS.CUSTOMERS, {
+
+      const res = await fetch(customersUrl, {
         method: "POST",
-        requiresAuth: true,
+        headers: getAuthHeaders(),
         body: JSON.stringify({
           name: name.trim(),
+          full_name: name.trim(), // supports backends using either column name
           email: email.trim(),
           phone: phone.trim(),
           address: address.trim(),
         }),
       });
+
+      if (!res.ok) {
+        throw new Error(
+          await parseErrorResponse(res, `Failed to create customer (${res.status})`)
+        );
+      }
 
       setName("");
       setEmail("");
@@ -115,9 +170,15 @@ export default function CustomersPage() {
   };
 
   const startEditing = (customer: Customer) => {
-    setEditingId(getRecordId(customer));
+    const id = getRecordId(customer);
+    if (!id || Number.isNaN(id)) {
+      setError("Cannot edit record: missing valid customer ID.");
+      return;
+    }
+
+    setEditingId(id);
     setEditForm({
-      name: customer.name || "",
+      name: getDisplayName(customer),
       email: customer.email || "",
       phone: customer.phone || "",
       address: customer.address || "",
@@ -126,23 +187,38 @@ export default function CustomersPage() {
     setSuccessMessage(null);
   };
 
-  // 3. PUT — Update an existing customer
+  // =========================================================
+  // 3. PUT — Update an existing customer directly from frontend
+  // =========================================================
   const handleUpdate = async (id: number) => {
+    if (!id || Number.isNaN(id)) {
+      setError("Invalid customer ID.");
+      return;
+    }
+
     setError(null);
     setSuccessMessage(null);
 
     try {
       setSubmitting(true);
-      await apiClient<Customer>(`${CONFIG.ENDPOINTS.CUSTOMERS}/${id}`, {
+
+      const res = await fetch(`${customersUrl}/${id}`, {
         method: "PUT",
-        requiresAuth: true,
+        headers: getAuthHeaders(),
         body: JSON.stringify({
           name: editForm.name.trim(),
+          full_name: editForm.name.trim(),
           email: editForm.email.trim(),
           phone: editForm.phone.trim(),
           address: editForm.address.trim(),
         }),
       });
+
+      if (!res.ok) {
+        throw new Error(
+          await parseErrorResponse(res, `Failed to update customer (${res.status})`)
+        );
+      }
 
       setEditingId(null);
       setSuccessMessage("Customer updated successfully.");
@@ -154,17 +230,31 @@ export default function CustomersPage() {
     }
   };
 
-  // 4. DELETE — Remove a customer
+  // =========================================================
+  // 4. DELETE — Remove a customer directly from frontend
+  // =========================================================
   const handleDelete = async (id: number) => {
+    if (!id || Number.isNaN(id)) {
+      setError("Invalid customer ID.");
+      return;
+    }
+
     setError(null);
     setSuccessMessage(null);
 
     try {
       setDeletingId(id);
-      await apiClient(`${CONFIG.ENDPOINTS.CUSTOMERS}/${id}`, {
+
+      const res = await fetch(`${customersUrl}/${id}`, {
         method: "DELETE",
-        requiresAuth: true,
+        headers: getAuthHeaders(),
       });
+
+      if (!res.ok) {
+        throw new Error(
+          await parseErrorResponse(res, `Failed to delete customer (${res.status})`)
+        );
+      }
 
       setSuccessMessage("Customer deleted successfully.");
       await fetchCustomers();
@@ -215,7 +305,7 @@ export default function CustomersPage() {
           <CardHeader>
             <CardTitle className="text-base">Add New Customer</CardTitle>
             <CardDescription className="text-xs text-stone-400">
-              Submits a POST request to {CONFIG.ENDPOINTS.CUSTOMERS}
+              Submits a POST request to {endpointPath}
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -285,13 +375,13 @@ export default function CustomersPage() {
               </p>
             ) : (
               <div className="space-y-3">
-                {customers.map((customer) => {
+                {customers.map((customer, index) => {
                   const id = getRecordId(customer);
                   const isEditing = editingId === id;
 
                   return (
                     <div
-                      key={id}
+                      key={id || index}
                       className="flex flex-col justify-between gap-4 rounded-xl border border-white/10 bg-[#15110f] p-4 md:flex-row md:items-center"
                     >
                       {isEditing ? (
@@ -334,7 +424,9 @@ export default function CustomersPage() {
                         </div>
                       ) : (
                         <div className="space-y-1">
-                          <p className="text-sm font-semibold">{customer.name}</p>
+                          <p className="text-sm font-semibold">
+                            {getDisplayName(customer)}
+                          </p>
                           <p className="text-xs text-stone-300">
                             {customer.email}
                             {customer.phone ? ` · ${customer.phone}` : ""}
