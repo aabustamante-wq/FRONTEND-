@@ -8,8 +8,8 @@ const geist = Geist({subsets:['latin'],variable:'--font-sans'});
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "Table & Hearth | Restaurant Management Portal",
-  description: "Restaurant operations, authentication, and live floor dashboard.",
+  title: "Restaurant Ordering  System",
+  description: "An effortless workspace that brings your guests, menus, orders, and payments together in one seamless flow.",
 };
 
 export default function RootLayout({
