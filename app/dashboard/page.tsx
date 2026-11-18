@@ -2,9 +2,9 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { useAuthGuard } from "@/hooks/useAuthGuard"; // [Reconstructed]
+import { useAuthGuard } from "@/hooks/useAuthGuard";
 import { clearTokens } from "@/lib/auth";
-import { apiClient } from "@/lib/apiClient";
+import { apiClient } from "@/lib/api";
 import { CONFIG } from "@/lib/config";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -24,7 +24,16 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Check, Eye, Loader2, LogOut, Pencil, Plus, RefreshCw, Trash2 } from "lucide-react";
+import {
+  Check,
+  Eye,
+  Loader2,
+  LogOut,
+  Pencil,
+  Plus,
+  RefreshCw,
+  Trash2,
+} from "lucide-react";
 
 interface Position {
   position_id: number;
@@ -38,7 +47,9 @@ export default function DashboardPage() {
   const { isChecking } = useAuthGuard();
 
   const [positions, setPositions] = useState<Position[]>([]);
-  const [selectedPosition, setSelectedPosition] = useState<Position | null>(null);
+  const [selectedPosition, setSelectedPosition] = useState<Position | null>(
+    null
+  );
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
@@ -60,8 +71,10 @@ export default function DashboardPage() {
         requiresAuth: true,
       });
       setPositions(Array.isArray(data) ? data : []);
-    } catch (err: any) {
-      setError(err.message || "Failed to fetch positions.");
+    } catch (err: unknown) {
+      setError(
+        err instanceof Error ? err.message : "Failed to fetch positions."
+      );
     } finally {
       setLoading(false);
     }
@@ -85,8 +98,12 @@ export default function DashboardPage() {
         }
       );
       setSelectedPosition(data);
-    } catch (err: any) {
-      setError(err.message || "Failed to fetch position details.");
+    } catch (err: unknown) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Failed to fetch position details."
+      );
     }
   };
 
@@ -127,7 +144,7 @@ export default function DashboardPage() {
     try {
       if (editingId !== null) {
         await apiClient(`${CONFIG.ENDPOINTS.POSITIONS}/${editingId}`, {
-          method: "PUT", // [Reconstructed: could be PATCH depending on backend]
+          method: "PUT",
           requiresAuth: true,
           body: JSON.stringify({
             position_code: positionCode,
@@ -149,8 +166,10 @@ export default function DashboardPage() {
 
       resetForm();
       await fetchPositions();
-    } catch (err: any) {
-      setError(err.message || "Failed to save position.");
+    } catch (err: unknown) {
+      setError(
+        err instanceof Error ? err.message : "Failed to save position."
+      );
     } finally {
       setSubmitting(false);
     }
@@ -176,8 +195,10 @@ export default function DashboardPage() {
         setSelectedPosition(null);
       }
       await fetchPositions();
-    } catch (err: any) {
-      setError(err.message || "Failed to delete position.");
+    } catch (err: unknown) {
+      setError(
+        err instanceof Error ? err.message : "Failed to delete position."
+      );
     }
   };
 
