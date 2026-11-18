@@ -15,5 +15,10 @@ export const CONFIG = {
     LOGIN: "/auth/login",
     REGISTER: "/auth/register",
     POSITIONS: "/positions",
+    CUSTOMERS: "/customers",
+    RESTAURANTS: "/restaurants",
+    FOOD_ITEMS: "/food-items",
+    ORDERS: "/orders",
+    PAYMENTS: "/payments",
   },
 } as const;
