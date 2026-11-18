@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuthGuard } from "@/hooks/useAuthGuard";
+import { clearTokens, getUserId } from "@/lib/auth";
 import { CONFIG } from "@/lib/config";
 import { Button } from "@/components/ui/button";
 import {
@@ -407,14 +408,20 @@ export default function DashboardPage() {
     setSubmitting(true);
     setFeedback(null);
 
-    const payload: Record<string, string | number> = {};
+    const isUpdate = editingId !== null;
+    const userId = getUserId();
+    const payload: Record<string, string | number> = {
+      ...(!isUpdate && userId !== null ? { user_id: userId } : {}),
+    };
+
     activeModule.fields.forEach((field) => {
-      const rawVal = formData[field.name] ?? "";
-      payload[field.name] =
-        field.type === "number" && rawVal !== "" ? Number(rawVal) : rawVal;
+      const rawVal = (formData[field.name] ?? "").trim();
+      if (rawVal !== "") {
+        payload[field.name] =
+          field.type === "number" ? Number(rawVal) : rawVal;
+      }
     });
 
-    const isUpdate = editingId !== null;
     const method = isUpdate ? "PUT" : "POST";
     const url = isUpdate
       ? `${CONFIG.API_BASE_URL}${path}/${editingId}`
@@ -540,10 +547,7 @@ export default function DashboardPage() {
   if (isChecking) return null;
 
   const handleLogout = () => {
-    if (typeof window !== "undefined") {
-      localStorage.removeItem(CONFIG.STORAGE_KEYS.ACCESS_TOKEN);
-      localStorage.removeItem(CONFIG.STORAGE_KEYS.REFRESH_TOKEN);
-    }
+    clearTokens();
     router.replace(CONFIG.ROUTES.LOGIN);
   };
 
