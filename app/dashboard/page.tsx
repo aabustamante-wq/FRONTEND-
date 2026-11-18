@@ -572,7 +572,7 @@ export default function DashboardPage() {
   return (
     <div className="min-h-screen bg-[#1c1714] font-sans text-white">
       <header className="sticky top-0 z-40 border-b border-white/10 bg-[#15110f]/95 backdrop-blur">
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
+        <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
           <button
             type="button"
             onClick={() => handleSelectTab("dashboard")}
@@ -673,7 +673,7 @@ export default function DashboardPage() {
         )}
       </header>
 
-      <main className="mx-auto max-w-6xl space-y-6 px-6 py-10">
+      <main className="mx-auto max-w-7xl space-y-6 px-6 py-10">
         {activeTab === "dashboard" || !activeModule ? (
           <>
             <div>
@@ -893,14 +893,21 @@ export default function DashboardPage() {
                 <table className="w-full border-collapse text-left text-xs">
                   <thead>
                     <tr className="border-t border-b border-white/15 text-stone-300">
-                      <th className="py-3.5 pr-4 font-medium">ID</th>
+                      <th className="whitespace-nowrap py-3.5 pr-3 font-medium">
+                        ID
+                      </th>
                       {visibleTableFields.map((field) => (
-                        <th key={field.name} className="px-4 py-3.5 font-medium">
+                        <th
+                          key={field.name}
+                          className="whitespace-nowrap px-3 py-3.5 font-medium"
+                        >
                           {field.label}
                         </th>
                       ))}
-                      <th className="px-4 py-3.5 font-medium">Created At</th>
-                      <th className="py-3.5 pl-4 text-right font-medium">
+                      <th className="whitespace-nowrap px-3 py-3.5 font-medium">
+                        Created At
+                      </th>
+                      <th className="whitespace-nowrap py-3.5 pl-3 text-right font-medium">
                         Actions
                       </th>
                     </tr>
@@ -938,7 +945,7 @@ export default function DashboardPage() {
                             key={id ?? index}
                             className="transition hover:bg-white/[0.04]"
                           >
-                            <td className="py-3.5 pr-4 font-mono text-stone-300">
+                            <td className="whitespace-nowrap py-3.5 pr-3 font-mono text-stone-300">
                               {id ?? index + 1}
                             </td>
 
@@ -947,7 +954,7 @@ export default function DashboardPage() {
                               return (
                                 <td
                                   key={field.name}
-                                  className="max-w-[200px] truncate px-4 py-3.5"
+                                  className="max-w-[180px] truncate px-3 py-3.5"
                                 >
                                   {val !== undefined &&
                                   val !== null &&
@@ -958,16 +965,16 @@ export default function DashboardPage() {
                               );
                             })}
 
-                            <td className="px-4 py-3.5 text-stone-300">
+                            <td className="whitespace-nowrap px-3 py-3.5 text-stone-300">
                               {formatCreatedAt(record)}
                             </td>
 
-                            <td className="py-3.5 pl-4">
-                              <div className="flex items-center justify-end gap-2">
+                            <td className="whitespace-nowrap py-3.5 pl-3">
+                              <div className="flex items-center justify-end gap-1.5">
                                 <button
                                   type="button"
                                   onClick={() => setViewRecord(record)}
-                                  className="inline-flex items-center gap-1.5 rounded-md bg-white/10 px-3 py-1.5 text-xs font-medium text-stone-100 transition hover:bg-white/20"
+                                  className="inline-flex items-center gap-1 rounded-md bg-white/10 px-2.5 py-1.5 text-xs font-medium text-stone-100 transition hover:bg-white/20"
                                 >
                                   <svg
                                     className="h-3.5 w-3.5"
@@ -993,7 +1000,7 @@ export default function DashboardPage() {
                                 <button
                                   type="button"
                                   onClick={() => handleStartEdit(record)}
-                                  className="inline-flex items-center gap-1.5 rounded-md bg-indigo-500/20 px-3 py-1.5 text-xs font-medium text-indigo-200 transition hover:bg-indigo-500/30"
+                                  className="inline-flex items-center gap-1 rounded-md bg-indigo-500/20 px-2.5 py-1.5 text-xs font-medium text-indigo-200 transition hover:bg-indigo-500/30"
                                 >
                                   <svg
                                     className="h-3.5 w-3.5"
@@ -1014,7 +1021,7 @@ export default function DashboardPage() {
                                 <button
                                   type="button"
                                   onClick={() => setDeleteTarget(record)}
-                                  className="inline-flex items-center gap-1.5 rounded-md bg-rose-500/20 px-3 py-1.5 text-xs font-medium text-rose-200 transition hover:bg-rose-500/30"
+                                  className="inline-flex items-center gap-1 rounded-md bg-rose-500/20 px-2.5 py-1.5 text-xs font-medium text-rose-200 transition hover:bg-rose-500/30"
                                 >
                                   <svg
                                     className="h-3.5 w-3.5"
