@@ -1,9 +1,9 @@
-\"use client";
+"use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
 import { useAuthGuard } from "@/hooks/useAuthGuard";
+import { apiClient } from "@/lib/api"; // adjust path if named "@/lib/apiClient"
 import { CONFIG } from "@/lib/config";
 import { Button } from "@/components/ui/button";
 import {
@@ -14,258 +14,385 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 
-const NAV_ITEMS = [
-  { label: "Dashboard", href: "/dashboard" },
-  { label: "Customers", href: "/dashboard/customers" },
-  { label: "Restaurants", href: "/dashboard/restaurants" },
-  { label: "Food Items", href: "/dashboard/food-items" },
-  { label: "Orders", href: "/dashboard/orders" },
-  { label: "Payments", href: "/dashboard/payments" },
-];
+interface Customer {
+  id?: number;
+  customer_id?: number;
+  name: string;
+  email: string;
+  phone: string;
+  address: string;
+}
 
-const SCHEMA_MODULES = [
-  {
-    title: "Customers",
-    table: "Customer",
-    description:
-      "Manage customer profiles, emails, phone numbers, and delivery addresses.",
-    href: "/dashboard/customers",
-    stat: "Manage Customers",
-  },
-  {
-    title: "Restaurants",
-    table: "Restaurant",
-    description:
-      "Configure branch locations, contact info, and opening/closing schedules.",
-    href: "/dashboard/restaurants",
-    stat: "Manage Restaurants",
-  },
-  {
-    title: "Food Items",
-    table: "food_item",
-    description:
-      "Maintain menu items, pricing, and restaurant menu assignments.",
-    href: "/dashboard/food-items",
-    stat: "Manage Menu",
-  },
-  {
-    title: "Orders & Line Items",
-    table: "orders · order_item",
-    description:
-      "Track order statuses, quantities, unit prices, subtotals, and grand totals.",
-    href: "/dashboard/orders",
-    stat: "Manage Orders",
-  },
-  {
-    title: "Payments",
-    table: "payment",
-    description:
-      "Monitor payment methods, transaction dates, amounts, and settlement statuses.",
-    href: "/dashboard/payments",
-    stat: "Manage Payments",
-  },
-];
-
-export default function DashboardPage() {
-  const router = useRouter();
-  const pathname = usePathname();
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+export default function CustomersPage() {
   const { isChecking } = useAuthGuard({ requireAuth: true });
+
+  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+  const [deletingId, setDeletingId] = useState<number | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+
+  // POST form state
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
+  const [address, setAddress] = useState("");
+
+  // PUT inline edit state
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [editForm, setEditForm] = useState({
+    name: "",
+    email: "",
+    phone: "",
+    address: "",
+  });
+
+  const getRecordId = (c: Customer): number => Number(c.id ?? c.customer_id);
+
+  // 1. GET — Fetch all customers
+  const fetchCustomers = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const response = await apiClient<Customer[] | { data: Customer[] }>(
+        CONFIG.ENDPOINTS.CUSTOMERS,
+        {
+          method: "GET",
+          requiresAuth: true,
+        }
+      );
+      const list = Array.isArray(response) ? response : response.data ?? [];
+      setCustomers(list);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load customers.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!isChecking) {
+      fetchCustomers();
+    }
+  }, [isChecking]);
+
+  // 2. POST — Create a new customer
+  const handleCreate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    setSuccessMessage(null);
+
+    if (!name.trim() || !email.trim()) {
+      setError("Name and email are required.");
+      return;
+    }
+
+    try {
+      setSubmitting(true);
+      await apiClient<Customer>(CONFIG.ENDPOINTS.CUSTOMERS, {
+        method: "POST",
+        requiresAuth: true,
+        body: JSON.stringify({
+          name: name.trim(),
+          email: email.trim(),
+          phone: phone.trim(),
+          address: address.trim(),
+        }),
+      });
+
+      setName("");
+      setEmail("");
+      setPhone("");
+      setAddress("");
+      setSuccessMessage("Customer created successfully.");
+      await fetchCustomers();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to create customer.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const startEditing = (customer: Customer) => {
+    setEditingId(getRecordId(customer));
+    setEditForm({
+      name: customer.name || "",
+      email: customer.email || "",
+      phone: customer.phone || "",
+      address: customer.address || "",
+    });
+    setError(null);
+    setSuccessMessage(null);
+  };
+
+  // 3. PUT — Update an existing customer
+  const handleUpdate = async (id: number) => {
+    setError(null);
+    setSuccessMessage(null);
+
+    try {
+      setSubmitting(true);
+      await apiClient<Customer>(`${CONFIG.ENDPOINTS.CUSTOMERS}/${id}`, {
+        method: "PUT",
+        requiresAuth: true,
+        body: JSON.stringify({
+          name: editForm.name.trim(),
+          email: editForm.email.trim(),
+          phone: editForm.phone.trim(),
+          address: editForm.address.trim(),
+        }),
+      });
+
+      setEditingId(null);
+      setSuccessMessage("Customer updated successfully.");
+      await fetchCustomers();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to update customer.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  // 4. DELETE — Remove a customer
+  const handleDelete = async (id: number) => {
+    setError(null);
+    setSuccessMessage(null);
+
+    try {
+      setDeletingId(id);
+      await apiClient(`${CONFIG.ENDPOINTS.CUSTOMERS}/${id}`, {
+        method: "DELETE",
+        requiresAuth: true,
+      });
+
+      setSuccessMessage("Customer deleted successfully.");
+      await fetchCustomers();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to delete customer.");
+    } finally {
+      setDeletingId(null);
+    }
+  };
 
   if (isChecking) return null;
 
-  const handleLogout = () => {
-    if (typeof window !== "undefined") {
-      localStorage.clear();
-    }
-    router.replace(CONFIG.ROUTES.LOGIN);
-  };
-
   return (
     <div className="min-h-screen bg-[#1c1714] font-sans text-white">
-      <header className="sticky top-0 z-50 border-b border-white/10 bg-[#15110f]/95 backdrop-blur">
+      <header className="border-b border-white/10 bg-[#15110f]/95">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
-          <Link href="/dashboard" className="flex items-center gap-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-full bg-[#4338ca] text-white">
-              <svg className="h-5 w-5" viewBox="0 0 24 24" fill="currentColor">
-                <circle cx="12" cy="8" r="4" />
-                <path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" />
-              </svg>
-            </div>
-            <span className="text-base font-bold tracking-tight">
-              Ordering Dashboard
-            </span>
-          </Link>
-
-          <nav className="hidden items-center gap-1 md:flex">
-            {NAV_ITEMS.map((item) => {
-              const isActive = pathname === item.href;
-              return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  className={`rounded-full px-3.5 py-1.5 text-xs font-medium transition-colors ${
-                    isActive
-                      ? "bg-[#4338ca] text-white"
-                      : "text-stone-300 hover:bg-white/10 hover:text-white"
-                  }`}
-                >
-                  {item.label}
-                </Link>
-              );
-            })}
-          </nav>
-
-          <div className="flex items-center gap-3">
-            <Button
-              onClick={handleLogout}
-              className="rounded-full bg-[#4338ca] px-5 text-xs font-semibold text-white hover:bg-[#3730a3]"
-            >
-              Sign Out
-            </Button>
-
-            <button
-              type="button"
-              onClick={() => setMobileMenuOpen((prev) => !prev)}
-              aria-label="Toggle navigation menu"
-              className="inline-flex items-center justify-center rounded-lg border border-white/15 p-2 text-stone-300 hover:bg-white/10 hover:text-white md:hidden"
-            >
-              <svg
-                className="h-5 w-5"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth={2}
-                viewBox="0 0 24 24"
-              >
-                {mobileMenuOpen ? (
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    d="M6 18L18 6M6 6l12 12"
-                  />
-                ) : (
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    d="M4 6h16M4 12h16M4 18h16"
-                  />
-                )}
-              </svg>
-            </button>
+          <div>
+            <h1 className="text-lg font-bold tracking-tight">
+              Customers Management
+            </h1>
+            <p className="text-xs text-stone-400">
+              Create, view, update, and delete customer records
+            </p>
           </div>
+          <Link
+            href={CONFIG.ROUTES.DASHBOARD}
+            className="rounded-full border border-white/15 px-4 py-1.5 text-xs font-medium text-stone-200 hover:bg-white/10"
+          >
+            ← Back to Dashboard
+          </Link>
         </div>
-
-        {mobileMenuOpen && (
-          <nav className="border-t border-white/10 bg-[#15110f] px-6 py-3 md:hidden">
-            <div className="flex flex-col gap-1.5">
-              {NAV_ITEMS.map((item) => {
-                const isActive = pathname === item.href;
-                return (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    onClick={() => setMobileMenuOpen(false)}
-                    className={`rounded-lg px-3 py-2 text-xs font-medium transition-colors ${
-                      isActive
-                        ? "bg-[#4338ca] text-white"
-                        : "text-stone-300 hover:bg-white/10 hover:text-white"
-                    }`}
-                  >
-                    {item.label}
-                  </Link>
-                );
-              })}
-            </div>
-          </nav>
-        )}
       </header>
 
-      <main className="mx-auto max-w-6xl space-y-8 px-6 py-10">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">
-            RESTAURANT ORDERING SYSTEM
-          </h1>
-          <p className="mt-1 text-xs text-stone-300">
-            Database-driven platform designed to manage customers, restaurant
-            branches, food items, orders, order line items, and payments.
-          </p>
-        </div>
-
-        <div className="grid gap-6 sm:grid-cols-3">
-          <Card className="border border-white/15 bg-white/10 text-white backdrop-blur-md">
-            <CardHeader className="pb-2">
-              <CardDescription className="text-xs text-stone-300">
-                Database Schema
-              </CardDescription>
-              <CardTitle className="text-3xl font-bold">6 Tables</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-xs text-indigo-300">
-                Customer, Restaurant, Food, Orders, Items, Payment
-              </p>
-            </CardContent>
-          </Card>
-
-          <Card className="border border-white/15 bg-white/10 text-white backdrop-blur-md">
-            <CardHeader className="pb-2">
-              <CardDescription className="text-xs text-stone-300">
-                Active Modules
-              </CardDescription>
-              <CardTitle className="text-3xl font-bold">5 Routes</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-xs text-stone-300">
-                Full CRUD management ready
-              </p>
-            </CardContent>
-          </Card>
-
-          <Card className="border border-white/15 bg-white/10 text-white backdrop-blur-md">
-            <CardHeader className="pb-2">
-              <CardDescription className="text-xs text-stone-300">
-                System Status
-              </CardDescription>
-              <CardTitle className="text-3xl font-bold text-emerald-400">
-                Online
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-xs text-stone-300">Connected</p>
-            </CardContent>
-          </Card>
-        </div>
-
-        <section className="space-y-4">
-          <h2 className="text-xs font-semibold uppercase tracking-wider text-stone-400">
-            Database Tables
-          </h2>
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {SCHEMA_MODULES.map((mod) => (
-              <Link key={mod.href} href={mod.href} className="group block">
-                <Card className="h-full border border-white/15 bg-white/5 text-white transition-colors group-hover:border-[#4338ca] group-hover:bg-white/10">
-                  <CardHeader className="pb-2">
-                    <div className="flex items-center justify-between gap-2">
-                      <CardTitle className="text-base font-semibold">
-                        {mod.title}
-                      </CardTitle>
-                      <span className="rounded bg-white/10 px-2 py-0.5 font-mono text-[10px] text-indigo-300">
-                        {mod.table}
-                      </span>
-                    </div>
-                    <CardDescription className="pt-1 text-xs text-stone-300">
-                      {mod.description}
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <span className="text-xs font-medium text-indigo-300 group-hover:underline">
-                      {mod.stat} →
-                    </span>
-                  </CardContent>
-                </Card>
-              </Link>
-            ))}
+      <main className="mx-auto max-w-6xl space-y-6 px-6 py-8">
+        {error && (
+          <div className="rounded-lg border border-red-500/40 bg-red-500/10 px-4 py-3 text-xs text-red-300">
+            {error}
           </div>
-        </section>
+        )}
+        {successMessage && (
+          <div className="rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-4 py-3 text-xs text-emerald-300">
+            {successMessage}
+          </div>
+        )}
+
+        {/* POST: Create Customer Form */}
+        <Card className="border border-white/15 bg-white/5 text-white">
+          <CardHeader>
+            <CardTitle className="text-base">Add New Customer</CardTitle>
+            <CardDescription className="text-xs text-stone-400">
+              Submits a POST request to {CONFIG.ENDPOINTS.CUSTOMERS}
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <form
+              onSubmit={handleCreate}
+              className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4"
+            >
+              <input
+                type="text"
+                placeholder="Full Name"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                required
+                className="rounded-lg border border-white/15 bg-[#15110f] px-3 py-2 text-xs text-white placeholder:text-stone-500 focus:border-[#4338ca] focus:outline-none"
+              />
+              <input
+                type="email"
+                placeholder="Email Address"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+                className="rounded-lg border border-white/15 bg-[#15110f] px-3 py-2 text-xs text-white placeholder:text-stone-500 focus:border-[#4338ca] focus:outline-none"
+              />
+              <input
+                type="text"
+                placeholder="Phone Number"
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+                className="rounded-lg border border-white/15 bg-[#15110f] px-3 py-2 text-xs text-white placeholder:text-stone-500 focus:border-[#4338ca] focus:outline-none"
+              />
+              <input
+                type="text"
+                placeholder="Delivery Address"
+                value={address}
+                onChange={(e) => setAddress(e.target.value)}
+                className="rounded-lg border border-white/15 bg-[#15110f] px-3 py-2 text-xs text-white placeholder:text-stone-500 focus:border-[#4338ca] focus:outline-none"
+              />
+              <div className="sm:col-span-2 lg:col-span-4">
+                <Button
+                  type="submit"
+                  disabled={submitting}
+                  className="rounded-full bg-[#4338ca] px-6 text-xs font-semibold text-white hover:bg-[#3730a3]"
+                >
+                  {submitting ? "Saving..." : "Create Customer"}
+                </Button>
+              </div>
+            </form>
+          </CardContent>
+        </Card>
+
+        {/* GET / PUT / DELETE: Customer Records List */}
+        <Card className="border border-white/15 bg-white/5 text-white">
+          <CardHeader>
+            <CardTitle className="text-base">
+              Customer Records ({customers.length})
+            </CardTitle>
+            <CardDescription className="text-xs text-stone-400">
+              Loaded via GET; edit inline (PUT) or remove (DELETE)
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {loading ? (
+              <p className="text-xs text-stone-400">Loading customers...</p>
+            ) : customers.length === 0 ? (
+              <p className="text-xs text-stone-400">
+                No customers found. Add one using the form above.
+              </p>
+            ) : (
+              <div className="space-y-3">
+                {customers.map((customer) => {
+                  const id = getRecordId(customer);
+                  const isEditing = editingId === id;
+
+                  return (
+                    <div
+                      key={id}
+                      className="flex flex-col justify-between gap-4 rounded-xl border border-white/10 bg-[#15110f] p-4 md:flex-row md:items-center"
+                    >
+                      {isEditing ? (
+                        <div className="grid flex-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                          <input
+                            type="text"
+                            value={editForm.name}
+                            onChange={(e) =>
+                              setEditForm({ ...editForm, name: e.target.value })
+                            }
+                            className="rounded border border-white/20 bg-[#1c1714] px-2.5 py-1.5 text-xs text-white"
+                          />
+                          <input
+                            type="email"
+                            value={editForm.email}
+                            onChange={(e) =>
+                              setEditForm({ ...editForm, email: e.target.value })
+                            }
+                            className="rounded border border-white/20 bg-[#1c1714] px-2.5 py-1.5 text-xs text-white"
+                          />
+                          <input
+                            type="text"
+                            value={editForm.phone}
+                            onChange={(e) =>
+                              setEditForm({ ...editForm, phone: e.target.value })
+                            }
+                            className="rounded border border-white/20 bg-[#1c1714] px-2.5 py-1.5 text-xs text-white"
+                          />
+                          <input
+                            type="text"
+                            value={editForm.address}
+                            onChange={(e) =>
+                              setEditForm({
+                                ...editForm,
+                                address: e.target.value,
+                              })
+                            }
+                            className="rounded border border-white/20 bg-[#1c1714] px-2.5 py-1.5 text-xs text-white"
+                          />
+                        </div>
+                      ) : (
+                        <div className="space-y-1">
+                          <p className="text-sm font-semibold">{customer.name}</p>
+                          <p className="text-xs text-stone-300">
+                            {customer.email}
+                            {customer.phone ? ` · ${customer.phone}` : ""}
+                          </p>
+                          {customer.address && (
+                            <p className="text-xs text-stone-400">
+                              {customer.address}
+                            </p>
+                          )}
+                        </div>
+                      )}
+
+                      <div className="flex shrink-0 items-center gap-2">
+                        {isEditing ? (
+                          <>
+                            <Button
+                              type="button"
+                              disabled={submitting}
+                              onClick={() => handleUpdate(id)}
+                              className="bg-emerald-600 px-3 text-xs text-white hover:bg-emerald-500"
+                            >
+                              Save
+                            </Button>
+                            <Button
+                              type="button"
+                              onClick={() => setEditingId(null)}
+                              className="bg-white/10 px-3 text-xs text-stone-200 hover:bg-white/20"
+                            >
+                              Cancel
+                            </Button>
+                          </>
+                        ) : (
+                          <>
+                            <Button
+                              type="button"
+                              onClick={() => startEditing(customer)}
+                              className="bg-[#4338ca] px-3 text-xs text-white hover:bg-[#3730a3]"
+                            >
+                              Edit
+                            </Button>
+                            <Button
+                              type="button"
+                              disabled={deletingId === id}
+                              onClick={() => handleDelete(id)}
+                              className="bg-red-600/80 px-3 text-xs text-white hover:bg-red-600"
+                            >
+                              {deletingId === id ? "Deleting..." : "Delete"}
+                            </Button>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </CardContent>
+        </Card>
       </main>
     </div>
   );

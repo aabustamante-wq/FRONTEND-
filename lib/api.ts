@@ -1,5 +1,5 @@
 import { CONFIG } from "./config";
-import { getAccessToken } from "./auth";
+import { clearTokens, getAccessToken } from "./auth";
 
 interface FetchOptions extends RequestInit {
   requiresAuth?: boolean;
@@ -22,24 +22,24 @@ export async function apiClient<T>(
     }
   }
 
-  const url = `${CONFIG.API_BASE_URL}${endpoint}`;
+  const response = await fetch(`${CONFIG.API_BASE_URL}${endpoint}`, {
+    headers: {
+      ...defaultHeaders,
+      ...headers,
+    },
+    ...restOptions,
+  });
 
-  let response: Response;
-  try {
-    response = await fetch(url, {
-      headers: {
-        ...defaultHeaders,
-        ...headers,
-      },
-      ...restOptions,
-    });
-  } catch {
-    throw new Error(
-      `Cannot reach ${url}. Verify your NestJS server is live with CORS enabled and NEXT_PUBLIC_API_URL is set in Vercel.`
-    );
+  if (response.status === 401 && requiresAuth) {
+    clearTokens();
+    if (typeof window !== "undefined") {
+      window.location.href = CONFIG.ROUTES.LOGIN;
+    }
+    throw new Error("Session expired. Please log in again.");
   }
 
-  const data = await response.json().catch(() => ({}));
+  const text = await response.text();
+  const data = text ? JSON.parse(text) : {};
 
   if (!response.ok) {
     const errorMessage = Array.isArray(data.message)
