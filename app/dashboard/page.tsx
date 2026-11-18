@@ -35,7 +35,7 @@ interface ModuleConfig {
   table: string;
   description: string;
   stat: string;
-  endpoint: string;
+  defaultEndpoint: string;
   fields: FieldConfig[];
 }
 
@@ -48,7 +48,7 @@ const MODULES: ModuleConfig[] = [
     description:
       "Manage customer profiles, emails, phone numbers, and delivery addresses.",
     stat: "Manage Customers",
-    endpoint: CONFIG.ENDPOINTS.CUSTOMERS,
+    defaultEndpoint: CONFIG.ENDPOINTS.CUSTOMERS,
     fields: [
       { name: "name", label: "Full Name", placeholder: "Juan Dela Cruz" },
       {
@@ -73,7 +73,7 @@ const MODULES: ModuleConfig[] = [
     description:
       "Configure branch locations, contact info, and opening/closing schedules.",
     stat: "Manage Restaurants",
-    endpoint: CONFIG.ENDPOINTS.RESTAURANTS,
+    defaultEndpoint: CONFIG.ENDPOINTS.RESTAURANTS,
     fields: [
       {
         name: "name",
@@ -105,7 +105,7 @@ const MODULES: ModuleConfig[] = [
     description:
       "Maintain menu items, pricing, and restaurant menu assignments.",
     stat: "Manage Menu",
-    endpoint: CONFIG.ENDPOINTS.FOOD_ITEMS,
+    defaultEndpoint: CONFIG.ENDPOINTS.FOOD_ITEMS,
     fields: [
       { name: "name", label: "Item Name", placeholder: "Laing Pasta" },
       {
@@ -135,7 +135,7 @@ const MODULES: ModuleConfig[] = [
     description:
       "Track order statuses, quantities, unit prices, subtotals, and grand totals.",
     stat: "Manage Orders",
-    endpoint: CONFIG.ENDPOINTS.ORDERS,
+    defaultEndpoint: CONFIG.ENDPOINTS.ORDERS,
     fields: [
       {
         name: "customer_id",
@@ -170,7 +170,7 @@ const MODULES: ModuleConfig[] = [
     description:
       "Monitor payment methods, transaction dates, amounts, and settlement statuses.",
     stat: "Manage Payments",
-    endpoint: CONFIG.ENDPOINTS.PAYMENTS,
+    defaultEndpoint: CONFIG.ENDPOINTS.PAYMENTS,
     fields: [
       {
         name: "order_id",
@@ -223,17 +223,38 @@ function getRecordId(record: Record<string, unknown>): string | number | null {
   return null;
 }
 
+async function extractErrorMessage(res: Response, fallback: string) {
+  try {
+    const text = await res.text();
+    if (!text) return fallback;
+    try {
+      const json = JSON.parse(text);
+      const detail = json?.message || json?.error || json?.detail;
+      if (Array.isArray(detail)) return `${fallback}: ${detail.join(", ")}`;
+      if (detail) return `${fallback}: ${detail}`;
+    } catch {
+      const cleanText = text.replace(/<[^>]+>/g, " ").trim().slice(0, 140);
+      if (cleanText) return `${fallback}: ${cleanText}`;
+    }
+  } catch {
+    // ignore read error
+  }
+  return fallback;
+}
+
 export default function DashboardPage() {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<ModuleKey>("dashboard");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-
-  // Backend health status for overview card
   const [apiStatus, setApiStatus] = useState<"checking" | "online" | "offline">(
     "checking"
   );
 
-  // CRUD states for whichever table is selected
+  // Per-module editable endpoint paths so you can test /api/... vs /... live
+  const [endpoints, setEndpoints] = useState<Record<string, string>>(() =>
+    Object.fromEntries(MODULES.map((m) => [m.key, m.defaultEndpoint]))
+  );
+
   const [records, setRecords] = useState<Record<string, unknown>[]>([]);
   const [formData, setFormData] = useState<Record<string, string>>({});
   const [editingId, setEditingId] = useState<string | number | null>(null);
@@ -251,6 +272,13 @@ export default function DashboardPage() {
       ? null
       : MODULES.find((m) => m.key === activeTab) ?? null;
 
+  const activeEndpoint = activeModule
+    ? endpoints[activeModule.key] || activeModule.defaultEndpoint
+    : "";
+
+  const normalizePath = (path: string) =>
+    path.startsWith("/") ? path.trim() : `/${path.trim()}`;
+
   const getAuthHeaders = () => {
     const token =
       typeof window !== "undefined"
@@ -262,14 +290,12 @@ export default function DashboardPage() {
     };
   };
 
-  // Initial backend connection check
   useEffect(() => {
     if (isChecking) return;
 
     const controller = new AbortController();
-    fetch(`${CONFIG.API_BASE_URL}${CONFIG.ENDPOINTS.CUSTOMERS}`, {
+    fetch(`${CONFIG.API_BASE_URL}/`, {
       method: "GET",
-      headers: getAuthHeaders(),
       signal: controller.signal,
     })
       .then((res) => setApiStatus(res.status < 500 ? "online" : "offline"))
@@ -280,36 +306,44 @@ export default function DashboardPage() {
     return () => controller.abort();
   }, [isChecking]);
 
-  // 1. GET — Fetch records whenever a table module is opened
-  const fetchRecords = useCallback(async (mod: ModuleConfig) => {
-    setLoading(true);
-    setFeedback(null);
-    try {
-      const res = await fetch(`${CONFIG.API_BASE_URL}${mod.endpoint}`, {
-        method: "GET",
-        headers: getAuthHeaders(),
-      });
-      if (!res.ok) {
-        throw new Error(`GET ${mod.endpoint} failed (${res.status})`);
+  // 1. GET — Fetch records
+  const fetchRecords = useCallback(
+    async (mod: ModuleConfig, overrideEndpoint?: string) => {
+      const path = normalizePath(
+        overrideEndpoint ?? endpoints[mod.key] ?? mod.defaultEndpoint
+      );
+      setLoading(true);
+      setFeedback(null);
+      try {
+        const res = await fetch(`${CONFIG.API_BASE_URL}${path}`, {
+          method: "GET",
+          headers: getAuthHeaders(),
+        });
+        if (!res.ok) {
+          throw new Error(
+            await extractErrorMessage(res, `GET ${path} failed (${res.status})`)
+          );
+        }
+        const json = await res.json();
+        const list = Array.isArray(json)
+          ? json
+          : Array.isArray(json?.data)
+            ? json.data
+            : [];
+        setRecords(list);
+      } catch (err) {
+        setRecords([]);
+        setFeedback({
+          type: "error",
+          message:
+            err instanceof Error ? err.message : "Failed to fetch records.",
+        });
+      } finally {
+        setLoading(false);
       }
-      const json = await res.json();
-      const list = Array.isArray(json)
-        ? json
-        : Array.isArray(json?.data)
-          ? json.data
-          : [];
-      setRecords(list);
-    } catch (err) {
-      setRecords([]);
-      setFeedback({
-        type: "error",
-        message:
-          err instanceof Error ? err.message : "Failed to fetch records.",
-      });
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+    },
+    [endpoints]
+  );
 
   const handleSelectTab = (key: ModuleKey) => {
     setActiveTab(key);
@@ -335,6 +369,7 @@ export default function DashboardPage() {
     e.preventDefault();
     if (!activeModule) return;
 
+    const path = normalizePath(activeEndpoint);
     setSubmitting(true);
     setFeedback(null);
 
@@ -348,8 +383,8 @@ export default function DashboardPage() {
     const isUpdate = editingId !== null;
     const method = isUpdate ? "PUT" : "POST";
     const url = isUpdate
-      ? `${CONFIG.API_BASE_URL}${activeModule.endpoint}/${editingId}`
-      : `${CONFIG.API_BASE_URL}${activeModule.endpoint}`;
+      ? `${CONFIG.API_BASE_URL}${path}/${editingId}`
+      : `${CONFIG.API_BASE_URL}${path}`;
 
     try {
       const res = await fetch(url, {
@@ -359,7 +394,12 @@ export default function DashboardPage() {
       });
 
       if (!res.ok) {
-        throw new Error(`${method} ${activeModule.endpoint} failed (${res.status})`);
+        throw new Error(
+          await extractErrorMessage(
+            res,
+            `${method} ${path} failed (${res.status})`
+          )
+        );
       }
 
       const resetForm: Record<string, string> = {};
@@ -369,7 +409,7 @@ export default function DashboardPage() {
       setFormData(resetForm);
       setEditingId(null);
 
-      await fetchRecords(activeModule);
+      await fetchRecords(activeModule, path);
       setFeedback({
         type: "success",
         message: isUpdate
@@ -389,7 +429,6 @@ export default function DashboardPage() {
     }
   };
 
-  // Populate form for PUT update
   const handleStartEdit = (record: Record<string, unknown>) => {
     if (!activeModule) return;
     const id = getRecordId(record);
@@ -404,7 +443,8 @@ export default function DashboardPage() {
     const populated: Record<string, string> = {};
     activeModule.fields.forEach((field) => {
       const val = record[field.name];
-      populated[field.name] = val !== undefined && val !== null ? String(val) : "";
+      populated[field.name] =
+        val !== undefined && val !== null ? String(val) : "";
     });
 
     setEditingId(id);
@@ -415,6 +455,7 @@ export default function DashboardPage() {
   // 4. DELETE — Remove record
   const handleDeleteRecord = async (record: Record<string, unknown>) => {
     if (!activeModule) return;
+    const path = normalizePath(activeEndpoint);
     const id = getRecordId(record);
     if (id === null) {
       setFeedback({
@@ -426,17 +467,17 @@ export default function DashboardPage() {
 
     setFeedback(null);
     try {
-      const res = await fetch(
-        `${CONFIG.API_BASE_URL}${activeModule.endpoint}/${id}`,
-        {
-          method: "DELETE",
-          headers: getAuthHeaders(),
-        }
-      );
+      const res = await fetch(`${CONFIG.API_BASE_URL}${path}/${id}`, {
+        method: "DELETE",
+        headers: getAuthHeaders(),
+      });
 
       if (!res.ok) {
         throw new Error(
-          `DELETE ${activeModule.endpoint}/${id} failed (${res.status})`
+          await extractErrorMessage(
+            res,
+            `DELETE ${path}/${id} failed (${res.status})`
+          )
         );
       }
 
@@ -471,7 +512,6 @@ export default function DashboardPage() {
 
   return (
     <div className="min-h-screen bg-[#1c1714] font-sans text-white">
-      {/* Top Navigation Bar (Preserved for Desktop & Mobile) */}
       <header className="sticky top-0 z-50 border-b border-white/10 bg-[#15110f]/95 backdrop-blur">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
           <button
@@ -574,7 +614,6 @@ export default function DashboardPage() {
         )}
       </header>
 
-      {/* Main Content */}
       <main className="mx-auto max-w-6xl space-y-8 px-6 py-10">
         {activeTab === "dashboard" || !activeModule ? (
           <>
@@ -688,10 +727,9 @@ export default function DashboardPage() {
             </section>
           </>
         ) : (
-          /* Direct Interactive GET / POST / PUT / DELETE View for Selected Table */
           <div className="space-y-6">
             <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
-              <div>
+              <div className="space-y-2">
                 <div className="flex items-center gap-2.5">
                   <h1 className="text-2xl font-bold tracking-tight">
                     {activeModule.title}
@@ -700,21 +738,29 @@ export default function DashboardPage() {
                     {activeModule.table}
                   </span>
                 </div>
-                <p className="mt-1 text-xs text-stone-300">
-                  Endpoint:{" "}
-                  <code className="text-indigo-300">
-                    {CONFIG.API_BASE_URL}
-                    {activeModule.endpoint}
-                  </code>{" "}
-                  · Methods: <strong>GET</strong>, <strong>POST</strong>,{" "}
-                  <strong>PUT</strong>, <strong>DELETE</strong>
-                </p>
+
+                {/* Live Endpoint Tester (switches between /api/... and /... if needed) */}
+                <div className="flex flex-wrap items-center gap-2 text-xs text-stone-300">
+                  <span>Endpoint:</span>
+                  <code className="text-indigo-300">{CONFIG.API_BASE_URL}</code>
+                  <input
+                    type="text"
+                    value={activeEndpoint}
+                    onChange={(e) =>
+                      setEndpoints((prev) => ({
+                        ...prev,
+                        [activeModule.key]: e.target.value,
+                      }))
+                    }
+                    className="rounded border border-white/20 bg-zinc-900 px-2.5 py-1 font-mono text-xs text-indigo-300 focus:border-[#4338ca] focus:outline-none"
+                  />
+                </div>
               </div>
 
               <div className="flex items-center gap-2">
                 <Button
                   type="button"
-                  onClick={() => fetchRecords(activeModule)}
+                  onClick={() => fetchRecords(activeModule, activeEndpoint)}
                   className="rounded-full bg-emerald-600 px-4 text-xs font-semibold text-white hover:bg-emerald-500"
                 >
                   Refresh (GET)
@@ -742,7 +788,7 @@ export default function DashboardPage() {
               </div>
             )}
 
-            {/* POST (Create) & PUT (Update) Form */}
+            {/* POST & PUT Form */}
             <Card className="border border-white/15 bg-white/5 text-white">
               <CardHeader>
                 <CardTitle className="text-base">
@@ -752,8 +798,8 @@ export default function DashboardPage() {
                 </CardTitle>
                 <CardDescription className="text-xs text-stone-300">
                   {editingId !== null
-                    ? `Sends a PUT request to ${activeModule.endpoint}/${editingId}`
-                    : `Sends a POST request to ${activeModule.endpoint}`}
+                    ? `Sends a PUT request to ${normalizePath(activeEndpoint)}/${editingId}`
+                    : `Sends a POST request to ${normalizePath(activeEndpoint)}`}
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -778,7 +824,7 @@ export default function DashboardPage() {
                             [field.name]: e.target.value,
                           }))
                         }
-                        className="w-full rounded-lg border border-white/15 bg-black/30 px-3 py-2 text-xs text-white placeholder:text-stone-500 focus:border-[#4338ca] focus:outline-none"
+                        className="w-full rounded-lg border border-white/15 bg-zinc-900 px-3 py-2 text-xs text-white placeholder:text-stone-500 focus:border-[#4338ca] focus:outline-none"
                       />
                     </div>
                   ))}
@@ -818,7 +864,7 @@ export default function DashboardPage() {
               </CardContent>
             </Card>
 
-            {/* GET Records List with PUT & DELETE Actions */}
+            {/* GET List with PUT & DELETE Actions */}
             <Card className="border border-white/15 bg-white/5 text-white">
               <CardHeader>
                 <CardTitle className="text-base">
@@ -826,9 +872,10 @@ export default function DashboardPage() {
                   {records.length === 1 ? "" : "s"}
                 </CardTitle>
                 <CardDescription className="text-xs text-stone-300">
-                  Fetched from <code>GET {activeModule.endpoint}</code>. Select{" "}
+                  Fetched from{" "}
+                  <code>GET {normalizePath(activeEndpoint)}</code>. Select{" "}
                   <strong>Edit (PUT)</strong> to modify or{" "}
-                  <strong>Delete (DELETE)</strong> to remove.
+                  <strong>Delete</strong> to remove.
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-3">
@@ -839,8 +886,7 @@ export default function DashboardPage() {
                 ) : records.length === 0 ? (
                   <p className="py-4 text-xs text-stone-400">
                     No records returned from{" "}
-                    <code>GET {activeModule.endpoint}</code>. Use the{" "}
-                    <strong>POST</strong> form above to add one.
+                    <code>GET {normalizePath(activeEndpoint)}</code>.
                   </p>
                 ) : (
                   records.map((record, index) => {
