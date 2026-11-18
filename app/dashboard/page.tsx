@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuthGuard } from "@/hooks/useAuthGuard";
-import { clearTokens, getUserId } from "@/lib/auth";
 import { CONFIG } from "@/lib/config";
 import { Button } from "@/components/ui/button";
 import {
@@ -27,6 +26,7 @@ interface FieldConfig {
   label: string;
   placeholder: string;
   type?: "text" | "email" | "number";
+  hideInTable?: boolean;
 }
 
 interface ModuleConfig {
@@ -52,6 +52,13 @@ const MODULES: ModuleConfig[] = [
     stat: "Manage Customers",
     defaultEndpoint: CONFIG.ENDPOINTS.CUSTOMERS,
     fields: [
+      {
+        name: "customer_id",
+        label: "Customer ID",
+        placeholder: "1",
+        type: "number",
+        hideInTable: true,
+      },
       { name: "name", label: "Full Name", placeholder: "Juan Dela Cruz" },
       {
         name: "email",
@@ -310,6 +317,10 @@ export default function DashboardPage() {
     ? endpoints[activeModule.key] || activeModule.defaultEndpoint
     : "";
 
+  const visibleTableFields = activeModule
+    ? activeModule.fields.filter((f) => !f.hideInTable)
+    : [];
+
   useEffect(() => {
     if (isChecking) return;
 
@@ -408,12 +419,7 @@ export default function DashboardPage() {
     setSubmitting(true);
     setFeedback(null);
 
-    const isUpdate = editingId !== null;
-    const userId = getUserId();
-    const payload: Record<string, string | number> = {
-      ...(!isUpdate && userId !== null ? { user_id: userId } : {}),
-    };
-
+    const payload: Record<string, string | number> = {};
     activeModule.fields.forEach((field) => {
       const rawVal = (formData[field.name] ?? "").trim();
       if (rawVal !== "") {
@@ -422,6 +428,7 @@ export default function DashboardPage() {
       }
     });
 
+    const isUpdate = editingId !== null;
     const method = isUpdate ? "PUT" : "POST";
     const url = isUpdate
       ? `${CONFIG.API_BASE_URL}${path}/${editingId}`
@@ -547,7 +554,10 @@ export default function DashboardPage() {
   if (isChecking) return null;
 
   const handleLogout = () => {
-    clearTokens();
+    if (typeof window !== "undefined") {
+      localStorage.removeItem(CONFIG.STORAGE_KEYS.ACCESS_TOKEN);
+      localStorage.removeItem(CONFIG.STORAGE_KEYS.REFRESH_TOKEN);
+    }
     router.replace(CONFIG.ROUTES.LOGIN);
   };
 
@@ -876,7 +886,7 @@ export default function DashboardPage() {
                   <thead>
                     <tr className="border-t border-b border-white/15 text-stone-300">
                       <th className="py-3.5 pr-4 font-medium">ID</th>
-                      {activeModule.fields.map((field) => (
+                      {visibleTableFields.map((field) => (
                         <th key={field.name} className="px-4 py-3.5 font-medium">
                           {field.label}
                         </th>
@@ -892,7 +902,7 @@ export default function DashboardPage() {
                     {loading ? (
                       <tr>
                         <td
-                          colSpan={activeModule.fields.length + 3}
+                          colSpan={visibleTableFields.length + 3}
                           className="py-8 text-center text-stone-400"
                         >
                           Loading {activeModule.title.toLowerCase()}...
@@ -901,7 +911,7 @@ export default function DashboardPage() {
                     ) : records.length === 0 ? (
                       <tr>
                         <td
-                          colSpan={activeModule.fields.length + 3}
+                          colSpan={visibleTableFields.length + 3}
                           className="py-8 text-center text-stone-400"
                         >
                           No records found in{" "}
@@ -924,7 +934,7 @@ export default function DashboardPage() {
                               {id ?? index + 1}
                             </td>
 
-                            {activeModule.fields.map((field) => {
+                            {visibleTableFields.map((field) => {
                               const val = record[field.name];
                               return (
                                 <td
