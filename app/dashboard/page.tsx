@@ -53,22 +53,28 @@ const MODULES: ModuleConfig[] = [
     defaultEndpoint: CONFIG.ENDPOINTS.CUSTOMERS,
     fields: [
       {
-        name: "customer_id",
-        label: "Customer ID",
-        placeholder: "1",
-        type: "number",
-        hideInTable: true,
+        name: "customer_firstname",
+        label: "First Name",
+        placeholder: "Aaron",
       },
-      { name: "name", label: "Full Name", placeholder: "Juan Dela Cruz" },
       {
-        name: "email",
+        name: "customer_lastname",
+        label: "Last Name",
+        placeholder: "Bustamante",
+      },
+      {
+        name: "customer_email",
         label: "Email",
         placeholder: "juan@example.com",
         type: "email",
       },
-      { name: "phone", label: "Phone Number", placeholder: "09171234567" },
       {
-        name: "address",
+        name: "customer_phone",
+        label: "Phone Number",
+        placeholder: "09123456789",
+      },
+      {
+        name: "customer_address",
         label: "Delivery Address",
         placeholder: "Naga City, Camarines Sur",
       },
