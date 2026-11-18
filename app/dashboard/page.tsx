@@ -41,6 +41,8 @@ interface ModuleConfig {
   fields: FieldConfig[];
 }
 
+const ENDPOINTS_MAP = (CONFIG.ENDPOINTS ?? {}) as Record<string, string>;
+
 const MODULES: ModuleConfig[] = [
   {
     key: "customers",
@@ -50,7 +52,7 @@ const MODULES: ModuleConfig[] = [
     table: "Customer",
     description: "A list of all customers stored in the backend.",
     stat: "Manage Customers",
-    defaultEndpoint: CONFIG.ENDPOINTS.CUSTOMERS,
+    defaultEndpoint: ENDPOINTS_MAP.CUSTOMERS || "/customer",
     fields: [
       {
         name: "customer_firstname",
@@ -88,7 +90,7 @@ const MODULES: ModuleConfig[] = [
     table: "Restaurant",
     description: "A list of all restaurant branches stored in the backend.",
     stat: "Manage Restaurants",
-    defaultEndpoint: CONFIG.ENDPOINTS.RESTAURANTS,
+    defaultEndpoint: ENDPOINTS_MAP.RESTAURANTS || "/restaurant",
     fields: [
       {
         name: "name",
@@ -120,7 +122,7 @@ const MODULES: ModuleConfig[] = [
     table: "food_item",
     description: "A list of all menu food items stored in the backend.",
     stat: "Manage Menu",
-    defaultEndpoint: CONFIG.ENDPOINTS.FOOD_ITEMS,
+    defaultEndpoint: ENDPOINTS_MAP.FOOD_ITEMS || "/food-item",
     fields: [
       { name: "name", label: "Item Name", placeholder: "Laing Pasta" },
       {
@@ -150,7 +152,7 @@ const MODULES: ModuleConfig[] = [
     table: "orders · order_item",
     description: "A list of all orders stored in the backend.",
     stat: "Manage Orders",
-    defaultEndpoint: CONFIG.ENDPOINTS.ORDERS,
+    defaultEndpoint: ENDPOINTS_MAP.ORDERS || "/orders",
     fields: [
       {
         name: "customer_id",
@@ -185,7 +187,7 @@ const MODULES: ModuleConfig[] = [
     table: "payment",
     description: "A list of all payment transactions stored in the backend.",
     stat: "Manage Payments",
-    defaultEndpoint: CONFIG.ENDPOINTS.PAYMENTS,
+    defaultEndpoint: ENDPOINTS_MAP.PAYMENTS || "/payment",
     fields: [
       {
         name: "order_id",
@@ -1200,4 +1202,4 @@ export default function DashboardPage() {
       </main>
     </div>
   );
-}
+}z
